@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import PropTypes from 'prop-types';
 import api from '../../services/api';
 
-import { Loading, Owner, IssueList } from './styles';
+import { Loading, Owner, IssueList, Buttons } from './styles';
 import Container from '../../components/Container/index';
 
 export default class Repository extends Component {
@@ -18,20 +18,26 @@ export default class Repository extends Component {
   state = {
     repository: {},
     issues: [],
+    repoName: '',
+    filter: 'open',
     loading: true,
+    page: 1,
   };
+
+  perPage = 20;
 
   async componentDidMount() {
     const { match } = this.props;
+    const { filter, page } = this.state;
 
     const repoName = decodeURIComponent(match.params.repository);
 
     const [repository, issues] = await Promise.all([
       api.get(`/repos/${repoName}`),
-      api.get(`/repos/${repoName}/issues`, {
+      api.get(`/repos/${repoName}/issues?page=${page}`, {
         params: {
-          state: 'open',
-          per_page: 5,
+          state: `${filter}`,
+          per_page: this.perPage,
         },
       }),
     ]);
@@ -39,12 +45,55 @@ export default class Repository extends Component {
     this.setState({
       repository: repository.data,
       issues: issues.data,
+      repoName,
       loading: false,
     });
   }
 
+  handleSelectChange = async e => {
+    const filter = e.target.value;
+    const { repoName } = this.state;
+
+    const issues = await api.get(`/repos/${repoName}/issues?state=${filter}`, {
+      params: {
+        per_page: this.perPage,
+      },
+    });
+
+    this.setState({
+      issues: issues.data,
+      filter,
+      page: 1,
+    });
+  };
+
+  changePage = async btn => {
+    const { repoName, filter } = this.state;
+    let { page } = this.state;
+
+    if (btn === 'next') {
+      page += 1;
+    } else {
+      page -= 1;
+    }
+
+    const issues = await api.get(
+      `/repos/${repoName}/issues?state=${filter}&page=${page}`,
+      {
+        params: {
+          per_page: this.perPage,
+        },
+      }
+    );
+
+    this.setState({
+      issues: issues.data,
+      page,
+    });
+  };
+
   render() {
-    const { repository, issues, loading } = this.state;
+    const { repository, issues, loading, filter, page } = this.state;
 
     if (loading) {
       return <Loading>Carregando</Loading>;
@@ -57,6 +106,19 @@ export default class Repository extends Component {
           <img src={repository.owner.avatar_url} alt={repository.owner.login} />
           <h1>{repository.name}</h1>
           <p>{repository.description}</p>
+          <div>
+            <p>Filtrar por:</p>
+            <select
+              name="filter-state"
+              id="filter-state"
+              defaultValue={filter}
+              onChange={this.handleSelectChange}
+            >
+              <option value="all">Todas</option>
+              <option value="open">Abertas</option>
+              <option value="closed">Fechadas</option>
+            </select>
+          </div>
         </Owner>
 
         <IssueList>
@@ -75,6 +137,23 @@ export default class Repository extends Component {
             </li>
           ))}
         </IssueList>
+        <Buttons>
+          <button
+            type="button"
+            disabled={page === 1}
+            onClick={() => this.changePage('prev')}
+          >
+            Anterior
+          </button>
+          <p>Página {page}</p>
+          <button
+            type="button"
+            disabled={issues.length < this.perPage}
+            onClick={() => this.changePage('next')}
+          >
+            Próximo
+          </button>
+        </Buttons>
       </Container>
     );
   }
